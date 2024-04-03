@@ -19,7 +19,6 @@ CREATE TABLE public.researcher (
 	abstract_en varchar(12770) NULL,
 	other_information varchar(20290) NULL,
 	qtt_publications int8 NULL,
-	"search" tsvector GENERATED ALWAYS AS ((((setweight(to_tsvector('simple'::regconfig, abstract::text), 'A'::"char") || ''::tsvector) || setweight(to_tsvector('simple'::regconfig, name::text), 'B'::"char")) || ''::tsvector) || setweight(to_tsvector('english'::regconfig, abstract_en::text), 'C'::"char")) STORED NULL,
 	CONSTRAINT researcher_pkey PRIMARY KEY (id)
 );
 
@@ -116,12 +115,12 @@ abstract varchar,
 abstract_en varchar,
 other_information varchar,
 qtt_publications int,
-ts_rank(search, websearch_to_tsquery('simple','Olga Mettig BA')) +
-ts_rank(search, websearch_to_tsquery('english','Olga Mettig BA'))
+ts_rank(search, websearch_to_tsquery('simple','Ciência de dados')) +
+ts_rank(search, websearch_to_tsquery('english','Ciência de dados'))
 as rank
 from researcher 
-where search @@ websearch_to_tsquery('simple','Olga Mettig BA') 
-or search @@ websearch_to_tsquery('english','Olga Mettig BA')
+where search @@ websearch_to_tsquery('simple','Ciência de dados') 
+or search @@ websearch_to_tsquery('english','Ciência de dados')
 order by rank desc;
 
 create or replace function search_researcher(term text)
@@ -156,3 +155,60 @@ $$
 language plpgsql;
 
 select * from search_researcher('Ciência de dados');
+
+-- Continuação -- Criação de um documento 
+
+SELECT researcher.citations || ' ' || researcher.abstract || ' ' || programa_ies.nome_programa || ' ' ||
+  COALESCE(string_agg(programa_ies.nome_docente, ' '), '') AS document
+FROM researcher
+JOIN programa_ies ON similarity(unaccent(LOWER(researcher.name)), unaccent(LOWER(programa_ies.nome_docente))) > 0.8
+GROUP BY researcher.id, programa_ies.id;
+
+SELECT to_tsvector(researcher.citations) ||
+    to_tsvector(researcher.abstract) ||
+    to_tsvector(programa_ies.nome_programa) ||
+    to_tsvector(coalesce((string_agg(programa_ies.nome_docente, ' ')), '')) as document
+FROM researcher
+JOIN programa_ies ON similarity(unaccent(LOWER(researcher.name)), unaccent(LOWER(programa_ies.nome_docente))) > 0.8
+GROUP BY researcher.id, programa_ies.id;
+
+SELECT to_tsvector('LEÃO, J. A. C. Professor e pesquisador efetivo titular na 
+Graduação e Pós-Graduação da Universidade do Estado da Bahia (UNEB), no Departamento de Ciências Humanas 
+(DCH I) e no Programa de Mestrado Profissional em Gestão e Tecnologias 
+Aplicadas à Educação (GESTEC/UNEB). Graduação de Licenciatura Plena em 
+Educação Física pela Universidade de Pernambuco (1988) e mestrado em Gestão 
+de Políticas Públicas pela Fundação Joaquim Nabuco (2005). 
+Doutorado Sanduíche pelo Instituto de Pesquisas 
+Tropicais de Lisboa/Portugal (2010). Doutorado em Educação pela UFBA (2011) e 
+Pós-doutorado em Artes Visuais pela UFBA (2021). Atua com os seguintes temas: 
+Memória, Educação e diversidade cultural, Políticas públicas e linguagens 
+geotecnológicas. GESTÃO E TECNOLOGIAS APLICADAS À EDUCAÇÃO 
+JOSE ANTONIO CARNEIRO LEAO');
+
+ALTER TABLE researcher ADD language text NOT NULL DEFAULT('english');
+
+-- Criação de uma tabela View --
+CREATE MATERIALIZED VIEW search_index AS
+SELECT
+	researcher.name,
+   	researcher.abstract,
+   	setweight(to_tsvector(researcher.language::regconfig, researcher.name), 'A') ||
+   	setweight(to_tsvector(researcher.language::regconfig, researcher.abstract), 'B') ||
+   	setweight(to_tsvector('simple', coalesce(string_agg(programa_ies.nome_docente, ' '))), 'A') as document
+FROM researcher
+JOIN programa_ies ON similarity(unaccent(LOWER(researcher.name)), unaccent(LOWER(programa_ies.nome_docente))) > 0.8
+GROUP BY researcher.id, programa_ies.id;
+
+--Consulta das informações--
+select name varchar,
+abstract varchar,
+ts_rank(document, websearch_to_tsquery('simple','Pesquisa Científica')) +
+ts_rank(document , websearch_to_tsquery('english','Pesquisa Científica'))
+as rank
+from search_index 
+where document @@ websearch_to_tsquery('simple','Pesquisa Científica') 
+or document  @@ websearch_to_tsquery('english','Pesquisa Científicar')
+order by rank desc;
+
+
+CREATE INDEX idx_fts_search ON search_index USING gin(document);
