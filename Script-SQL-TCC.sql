@@ -187,6 +187,11 @@ JOSE ANTONIO CARNEIRO LEAO');
 
 ALTER TABLE researcher ADD language text NOT NULL DEFAULT('english');
 
+CREATE TEXT SEARCH CONFIGURATION fr ( COPY = french );
+ALTER TEXT SEARCH CONFIGURATION fr
+        ALTER MAPPING FOR hword, hword_part, word
+        WITH unaccent, french_stem;
+
 -- Criação de uma tabela View --
 CREATE MATERIALIZED VIEW search_index AS
 SELECT
@@ -202,13 +207,39 @@ GROUP BY researcher.id, programa_ies.id;
 --Consulta das informações--
 select name varchar,
 abstract varchar,
-ts_rank(document, websearch_to_tsquery('simple','Pesquisa Científica')) +
-ts_rank(document , websearch_to_tsquery('english','Pesquisa Científica'))
+ts_rank(document, websearch_to_tsquery('simple','Erika')) +
+ts_rank(document , websearch_to_tsquery('english','Erika'))
 as rank
 from search_index 
-where document @@ websearch_to_tsquery('simple','Pesquisa Científica') 
-or document  @@ websearch_to_tsquery('english','Pesquisa Científicar')
+where document @@ websearch_to_tsquery('simple','Erika') 
+or document  @@ websearch_to_tsquery('english','Erika')
 order by rank desc;
 
 
+CREATE OR REPLACE FUNCTION search_search_index(term text)
+RETURNS TABLE (
+    name varchar,
+    abstract varchar
+) AS
+$$
+BEGIN
+    RETURN QUERY
+    SELECT
+        r.name,
+        r.abstract
+    FROM
+        search_index AS r
+    WHERE
+        r.document @@ websearch_to_tsquery('simple', term)
+        OR r.document @@ websearch_to_tsquery('english', term)
+    ORDER BY
+        ts_rank(r.document, websearch_to_tsquery('simple', term)) +
+        ts_rank(r.document, websearch_to_tsquery('english', term)) DESC;
+END;
+$$
+LANGUAGE plpgsql;
+
+select * from search_search_index('Ciência de dados');
+
 CREATE INDEX idx_fts_search ON search_index USING gin(document);
+ 
