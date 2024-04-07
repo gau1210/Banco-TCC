@@ -1,3 +1,38 @@
+CREATE TABLE public.employee (
+	id serial PRIMARY KEY,
+	name VARCHAR ( 100 ) NOT NULL,
+	position VARCHAR ( 100 ) NOT NULL,
+	office VARCHAR ( 100 ) NOT NULL,
+	age INT NOT NULL,
+	salary INT NOT NULL,
+	photo VARCHAR ( 150 ) NOT NULL
+);
+
+
+INSERT INTO
+    employee(name, position, office, age, salary, photo)
+VALUES
+	('Tiger Wood', 'Accountant', 'Tokyo', 36, 5689, '01.jpg'),
+	('Mark Oto Ednalan', 'Chief Executive Officer (CEO)', 'London', 56, 5648, '02.jpg'),
+	('Jacob thompson', 'Junior Technical Author', 'San Francisco', 23, 5689, '03.jpg'),
+	('cylde Ednalan', 'Software Engineer', 'Olongapo', 23, 54654, '04.jpg'),
+	('Rhona Davidson', 'Software Engineer', 'San Francisco', 26, 5465, '05.jpg'),
+	('Quinn Flynn', 'Integration Specialist', 'New York', 53, 56465, '06.jpg'),
+	('Tiger Nixon', 'Software Engineer', 'London', 45, 456, '07.jpg'),
+	('Airi Satou', 'Pre-Sales Support', 'New York', 25, 4568, '08.jpg'),
+	('Angelica Ramos', 'Sales Assistant', 'New York', 45, 456, '09.jpg'),
+	('Ashton updated', 'Senior Javascript Developer', 'Olongapo', 45, 54565, '01.jpg'),
+	('Bradley Greer', 'Regional Director', 'San Francisco', 27, 5485, '02.jpg'),
+	('Brenden Wagner', 'Javascript Developer', 'San Francisco', 38, 65468, '03.jpg'),
+	('Brielle Williamson', 'Personnel Lead', 'Olongapo', 56, 354685, '04.jpg'),
+	('Bruno Nash', 'Customer Support', 'New York', 36, 65465, '05.jpg'),
+	('cairocoders', 'Sales Assistant', 'Sydney', 45, 56465, '06.jpg'),
+	('Zorita Serrano', 'Support Engineer', 'San Francisco', 38, 6548, '07.jpg'),
+	('Zenaida Frank', 'Chief Operating Officer (COO)', 'San Francisco', 39, 545, '08.jpg'),
+	('Sakura Yamamoto', 'Support Engineer', 'Tokyo', 48, 5468, '05.jpg'),
+	('Serge Baldwin', 'Data Coordinator', 'Singapore', 85, 5646, '05.jpg'),
+	('Shad Decker', 'Regional Director', 'Tokyo', 45, 4545, '05.jpg');
+
 CREATE TABLE public.programa_ies (
 	id uuid DEFAULT uuid_generate_v4() NOT NULL,
 	ano_base varchar NOT NULL,
@@ -84,8 +119,8 @@ alter table researcher drop search;
 alter table researcher 
 add search tsvector
 generated always as (
-setweight(to_tsvector('simple',abstract),'A') || ' ' ||
-setweight(to_tsvector('simple',name),'B') || ' ' ||
+setweight(to_tsvector('simple',abstract),'B') || ' ' ||
+setweight(to_tsvector('simple',name),'A') || ' ' ||
 setweight(to_tsvector('english',abstract_en),'C'):: tsvector
 ) stored;
 
@@ -154,7 +189,7 @@ end;
 $$
 language plpgsql;
 
-select * from search_researcher('Ciência de dados');
+select * from search_researcher('Robótica & inteligente');
 
 -- Continuação -- Criação de um documento 
 
@@ -172,25 +207,27 @@ FROM researcher
 JOIN programa_ies ON similarity(unaccent(LOWER(researcher.name)), unaccent(LOWER(programa_ies.nome_docente))) > 0.8
 GROUP BY researcher.id, programa_ies.id;
 
-SELECT to_tsvector('LEÃO, J. A. C. Professor e pesquisador efetivo titular na 
-Graduação e Pós-Graduação da Universidade do Estado da Bahia (UNEB), no Departamento de Ciências Humanas 
-(DCH I) e no Programa de Mestrado Profissional em Gestão e Tecnologias 
-Aplicadas à Educação (GESTEC/UNEB). Graduação de Licenciatura Plena em 
-Educação Física pela Universidade de Pernambuco (1988) e mestrado em Gestão 
-de Políticas Públicas pela Fundação Joaquim Nabuco (2005). 
-Doutorado Sanduíche pelo Instituto de Pesquisas 
-Tropicais de Lisboa/Portugal (2010). Doutorado em Educação pela UFBA (2011) e 
-Pós-doutorado em Artes Visuais pela UFBA (2021). Atua com os seguintes temas: 
-Memória, Educação e diversidade cultural, Políticas públicas e linguagens 
-geotecnológicas. GESTÃO E TECNOLOGIAS APLICADAS À EDUCAÇÃO 
-JOSE ANTONIO CARNEIRO LEAO');
+SELECT researcher.citations || ' ' || researcher.abstract || ' ' || programa_ies.nome_programa || ' ' ||
+  COALESCE(string_agg(programa_ies.nome_docente, ' '), '') AS document
+FROM "researcher_Programa_ies"
+JOIN programa_ies on programa_ies.id = "researcher_Programa_ies".programas_id_ies
+JOIN researcher on researcher.id = "researcher_Programa_ies".researcher_id 
+GROUP BY researcher.id, programa_ies.id;
+
+SELECT to_tsvector(researcher.citations) ||
+    to_tsvector(researcher.abstract) ||
+    to_tsvector(programa_ies.nome_programa) ||
+    to_tsvector(coalesce((string_agg(programa_ies.nome_docente, ' ')), '')) as document
+FROM "researcher_Programa_ies"
+JOIN programa_ies on programa_ies.id = "researcher_Programa_ies".programas_id_ies
+JOIN researcher on researcher.id = "researcher_Programa_ies".researcher_id 
+GROUP BY researcher.id, programa_ies.id;
 
 ALTER TABLE researcher ADD language text NOT NULL DEFAULT('english');
 
-CREATE TEXT SEARCH CONFIGURATION fr ( COPY = french );
-ALTER TEXT SEARCH CONFIGURATION fr
-        ALTER MAPPING FOR hword, hword_part, word
-        WITH unaccent, french_stem;
+CREATE TEXT SEARCH CONFIGURATION usimple ( COPY = simple );
+ALTER TEXT SEARCH CONFIGURATION usimple ALTER MAPPING
+FOR hword, hword_part, word WITH unaccent, simple;
 
 -- Criação de uma tabela View --
 CREATE MATERIALIZED VIEW search_index AS
@@ -199,34 +236,63 @@ SELECT
    	researcher.abstract,
    	setweight(to_tsvector(researcher.language::regconfig, researcher.name), 'A') ||
    	setweight(to_tsvector(researcher.language::regconfig, researcher.abstract), 'B') ||
+   	setweight(to_tsvector(researcher.language::regconfig, programa_ies.nome_programa), 'C') ||
    	setweight(to_tsvector('simple', coalesce(string_agg(programa_ies.nome_docente, ' '))), 'A') as document
 FROM researcher
 JOIN programa_ies ON similarity(unaccent(LOWER(researcher.name)), unaccent(LOWER(programa_ies.nome_docente))) > 0.8
 GROUP BY researcher.id, programa_ies.id;
 
+CREATE MATERIALIZED VIEW search_index AS
+select
+	researcher.id,
+	researcher.name,
+   	researcher.abstract,
+   	programa_ies.nome_programa,
+   	setweight(to_tsvector(researcher.language::regconfig, researcher.name), 'A') ||
+   	setweight(to_tsvector(researcher.language::regconfig, researcher.abstract), 'B') ||
+   	setweight(to_tsvector(researcher.language::regconfig, programa_ies.nome_programa), 'C') ||
+   	setweight(to_tsvector('simple', coalesce(string_agg(programa_ies.nome_docente, ' '))), 'A') as document
+FROM "researcher_Programa_ies"
+JOIN programa_ies on programa_ies.id = "researcher_Programa_ies".programas_id_ies
+JOIN researcher on researcher.id = "researcher_Programa_ies".researcher_id
+GROUP BY researcher.id, programa_ies.id;
+
+CREATE INDEX idx_fts_search ON search_index USING gin(document);
+
+SELECT id as id,abstract
+FROM search_index
+WHERE document @@ to_tsquery('simple', 'Ciência')
+ORDER BY ts_rank(document, to_tsquery('simple', 'Ciência')) DESC;
+
 --Consulta das informações--
-select name varchar,
+select id uuid,
+name varchar,
+nome_programa varchar,
 abstract varchar,
-ts_rank(document, websearch_to_tsquery('simple','Erika')) +
-ts_rank(document , websearch_to_tsquery('english','Erika'))
+ts_rank(document, websearch_to_tsquery('simple','Ciência de dados')) +
+ts_rank(document , websearch_to_tsquery('english','Ciência de dados'))
 as rank
 from search_index 
-where document @@ websearch_to_tsquery('simple','Erika') 
-or document  @@ websearch_to_tsquery('english','Erika')
+where document @@ websearch_to_tsquery('simple','Ciência de dados') 
+or document  @@ websearch_to_tsquery('english','Ciência de dados')
 order by rank desc;
 
 
 CREATE OR REPLACE FUNCTION search_search_index(term text)
 RETURNS TABLE (
+	id uuid,
     name varchar,
-    abstract varchar
+    abstract varchar,
+    nome_programa varchar  
 ) AS
 $$
 BEGIN
     RETURN QUERY
-    SELECT
+    select
+    	r.id uuid,
         r.name,
-        r.abstract
+        r.abstract,
+        r.nome_programa varchar 
     FROM
         search_index AS r
     WHERE
@@ -241,5 +307,30 @@ LANGUAGE plpgsql;
 
 select * from search_search_index('Ciência de dados');
 
-CREATE INDEX idx_fts_search ON search_index USING gin(document);
- 
+CREATE MATERIALIZED VIEW unique_lexeme AS
+SELECT word FROM ts_stat(
+$$SELECT to_tsvector('simple', researcher.name) ||
+	to_tsvector('simple', researcher.abstract) ||
+	to_tsvector('simple', programa_ies.nome_programa) ||
+	to_tsvector('simple', coalesce(string_agg(programa_ies.nome_docente, ' ')))
+FROM "researcher_Programa_ies"
+JOIN programa_ies on programa_ies.id = "researcher_Programa_ies".programas_id_ies
+JOIN researcher on researcher.id = "researcher_Programa_ies".researcher_id
+GROUP BY researcher.id, programa_ies.id$$);
+
+CREATE INDEX words_idx ON unique_lexeme USING gin(word gin_trgm_ops);
+
+REFRESH MATERIALIZED VIEW unique_lexeme;
+
+
+SELECT word,similarity(word, 'Ciência de dados') AS sml
+  FROM unique_lexeme
+  WHERE word % 'Ciência de dados'
+  ORDER BY sml DESC, word;
+
+SELECT word
+FROM unique_lexeme
+WHERE similarity(word, 'Ciência de dados') >= 0.5
+ORDER BY word <-> 'Ciência de dados';
+
+select * from search_search_index('Ciência de dados');
