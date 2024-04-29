@@ -106,7 +106,16 @@ where search @@ phraseto_tsquery('Olga Mettig');
 select websearch_to_tsquery('Olga Mettig or BA');
 
 select abstract from researcher 
-where search @@ websearch_to_tsquery('Olga Mettig BA'); 
+where search @@ websearch_to_tsquery('Ciência');
+
+SELECT "name", abstract,ts_rank_cd(
+    search,
+    to_tsquery('simple', websearch_to_tsquery('simple', 'Ciência de dados')::text || ':*')
+) AS rank
+FROM researcher
+WHERE search @@ to_tsquery('simple', websearch_to_tsquery('simple', 'Ciência de dados')::text || ':*')
+ORDER BY rank DESC;
+
 
 select id uuid,
 name varchar,
@@ -115,12 +124,12 @@ abstract varchar,
 abstract_en varchar,
 other_information varchar,
 qtt_publications int,
-ts_rank(search, websearch_to_tsquery('simple','Ciência de dados')) +
-ts_rank(search, websearch_to_tsquery('english','Ciência de dados'))
+ts_rank(search, websearch_to_tsquery('simple','Ciência <-> dados')) +
+ts_rank(search, websearch_to_tsquery('english','Ciência <-> dados'))
 as rank
 from researcher 
-where search @@ websearch_to_tsquery('simple','Ciência de dados') 
-or search @@ websearch_to_tsquery('english','Ciência de dados')
+where search @@ websearch_to_tsquery('simple','Ciência <-> dados') 
+or search @@ websearch_to_tsquery('english','Ciência <-> dados')
 order by rank desc;
 
 create or replace function search_researcher(term text)
