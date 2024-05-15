@@ -29,8 +29,13 @@ CREATE TABLE public."researcher_Programa_ies" (
 	CONSTRAINT researcher_id_fk FOREIGN KEY (researcher_id) REFERENCES public.researcher(id) ON DELETE CASCADE ON UPDATE CASCADE
 );
 
+
+-- Bibliotecas 
+
 CREATE EXTENSION pg_trgm;
 CREATE EXTENSION unaccent;
+
+-- Criação do documento na tabela researcher
 
 SELECT d.name, g.nome_docente,d.id, g.id, ano_base,nome_programa, grau_titulacao, entidade_ensino  FROM researcher d, programa_ies g
 WHERE
@@ -52,7 +57,6 @@ WHERE unaccent(LOWER(d.name)) = unaccent(LOWER(g.nome_docente));
 select abstract from researcher where abstract like '%experiência na área de Direito%';
 explain select abstract from researcher where abstract like '%experiência na área de Direito%';
 select to_tsvector('experiência na área de Direito');
-select to_tsvector(abstract) from researcher limit 10; 
 
 select abstract 
 from researcher 
@@ -108,13 +112,16 @@ select websearch_to_tsquery('Olga Mettig or BA');
 select abstract from researcher 
 where search @@ websearch_to_tsquery('Ciência');
 
-SELECT "name", abstract,ts_rank_cd(
+select "name", abstract, ts_rank_cd(
     search,
     to_tsquery('simple', websearch_to_tsquery('simple', 'Ciência de dados')::text || ':*')
 ) AS rank
 FROM researcher
 WHERE search @@ to_tsquery('simple', websearch_to_tsquery('simple', 'Ciência de dados')::text || ':*')
 ORDER BY rank DESC;
+
+SELECT * FROM researcher 
+WHERE search @@ to_tsquery('simple', 'Ciência | dados')
 
 
 select id uuid,
@@ -133,6 +140,7 @@ or search @@ websearch_to_tsquery('english','Ciência <-> dados')
 order by rank desc;
 
 create or replace function search_researcher(term text)
+
 returns table (
     id uuid,
     name varchar,
@@ -163,23 +171,9 @@ end;
 $$
 language plpgsql;
 
-select * from search_researcher('Robótica & inteligente');
+select * from search_researcher('Robótica & ! inteligente');
 
--- Continuação -- Criação de um documento 
-
-SELECT researcher.citations || ' ' || researcher.abstract || ' ' || programa_ies.nome_programa || ' ' ||
-  COALESCE(string_agg(programa_ies.nome_docente, ' '), '') AS document
-FROM researcher
-JOIN programa_ies ON similarity(unaccent(LOWER(researcher.name)), unaccent(LOWER(programa_ies.nome_docente))) > 0.8
-GROUP BY researcher.id, programa_ies.id;
-
-SELECT to_tsvector(researcher.citations) ||
-    to_tsvector(researcher.abstract) ||
-    to_tsvector(programa_ies.nome_programa) ||
-    to_tsvector(coalesce((string_agg(programa_ies.nome_docente, ' ')), '')) as document
-FROM researcher
-JOIN programa_ies ON similarity(unaccent(LOWER(researcher.name)), unaccent(LOWER(programa_ies.nome_docente))) > 0.8
-GROUP BY researcher.id, programa_ies.id;
+-- Continuação -- Criação de um documento para o TCC
 
 SELECT researcher.citations || ' ' || researcher.abstract || ' ' || programa_ies.nome_programa || ' ' ||
   COALESCE(string_agg(programa_ies.nome_docente, ' '), '') AS document
@@ -204,17 +198,6 @@ ALTER TEXT SEARCH CONFIGURATION usimple ALTER MAPPING
 FOR hword, hword_part, word WITH unaccent, simple;
 
 -- Criação de uma tabela View --
-CREATE MATERIALIZED VIEW search_index AS
-SELECT
-	researcher.name,
-   	researcher.abstract,
-   	setweight(to_tsvector(researcher.language::regconfig, researcher.name), 'A') ||
-   	setweight(to_tsvector(researcher.language::regconfig, researcher.abstract), 'B') ||
-   	setweight(to_tsvector(researcher.language::regconfig, programa_ies.nome_programa), 'C') ||
-   	setweight(to_tsvector('simple', coalesce(string_agg(programa_ies.nome_docente, ' '))), 'A') as document
-FROM researcher
-JOIN programa_ies ON similarity(unaccent(LOWER(researcher.name)), unaccent(LOWER(programa_ies.nome_docente))) > 0.8
-GROUP BY researcher.id, programa_ies.id;
 
 CREATE MATERIALIZED VIEW search_index AS
 select
@@ -222,33 +205,32 @@ select
 	researcher.name,
    	researcher.abstract,
    	programa_ies.nome_programa,
-   	setweight(to_tsvector(researcher.language::regconfig, researcher.name), 'A') ||
-   	setweight(to_tsvector(researcher.language::regconfig, researcher.abstract), 'B') ||
-   	setweight(to_tsvector(researcher.language::regconfig, programa_ies.nome_programa), 'C') ||
+   	setweight(to_tsvector('simple', researcher.abstract), 'A') ||
+   	setweight(to_tsvector('simple', researcher.name), 'B') ||
+   	setweight(to_tsvector('simple', programa_ies.nome_programa), 'C') ||
    	setweight(to_tsvector('simple', coalesce(string_agg(programa_ies.nome_docente, ' '))), 'A') as document
 FROM "researcher_Programa_ies"
 JOIN programa_ies on programa_ies.id = "researcher_Programa_ies".programas_id_ies
 JOIN researcher on researcher.id = "researcher_Programa_ies".researcher_id
 GROUP BY researcher.id, programa_ies.id;
 
+
 CREATE INDEX idx_fts_search ON search_index USING gin(document);
 
-SELECT id as id,abstract
+SELECT name,abstract
 FROM search_index
-WHERE document @@ to_tsquery('simple', 'Ciência')
-ORDER BY ts_rank(document, to_tsquery('simple', 'Ciência')) DESC;
+WHERE document @@ websearch_to_tsquery('simple', 'Ciência de dados')
+ORDER BY ts_rank(document, websearch_to_tsquery('simple', 'Ciência dados')) DESC;
 
 --Consulta das informações--
 select id uuid,
 name varchar,
 nome_programa varchar,
 abstract varchar,
-ts_rank(document, websearch_to_tsquery('simple','Ciência de dados')) +
-ts_rank(document , websearch_to_tsquery('english','Ciência de dados'))
+ts_rank(document, websearch_to_tsquery('simple','Ciência de dados'))
 as rank
 from search_index 
 where document @@ websearch_to_tsquery('simple','Ciência de dados') 
-or document  @@ websearch_to_tsquery('english','Ciência de dados')
 order by rank desc;
 
 
@@ -279,7 +261,18 @@ END;
 $$
 LANGUAGE plpgsql;
 
-select * from search_search_index('Ciência de dados');
+select * from search_search_index('Faculdade de Educação');
+
+SELECT * FROM search_index
+WHERE document @@ to_tsquery('simple', 'Faculdade & Educação')
+
+select name, abstract, ts_rank_cd(
+    document,
+    to_tsquery('simple', websearch_to_tsquery('simple', 'Faculdade de Educação')::text || ':*')
+) AS rank
+FROM search_index
+WHERE document @@ to_tsquery('simple', websearch_to_tsquery('simple', 'Faculdade de Educação')::text || ':*')
+ORDER BY rank DESC;
 
 CREATE MATERIALIZED VIEW unique_lexeme AS
 SELECT word FROM ts_stat(
@@ -297,14 +290,14 @@ CREATE INDEX words_idx ON unique_lexeme USING gin(word gin_trgm_ops);
 REFRESH MATERIALIZED VIEW unique_lexeme;
 
 
-SELECT word,similarity(word, 'Ciência de dados') AS sml
+SELECT word,similarity(word, :q) AS sml
   FROM unique_lexeme
-  WHERE word % 'Ciência de dados'
+  WHERE word % :q
   ORDER BY sml DESC, word;
 
 SELECT word
 FROM unique_lexeme
-WHERE similarity(word, 'Ciência de dados') >= 0.5
-ORDER BY word <-> 'Ciência de dados';
+WHERE similarity(word, :q) >= 0.5
+ORDER BY word <-> :q;
 
-select * from search_search_index('Ciência de dados');
+select * from search_search_index('Informação');
