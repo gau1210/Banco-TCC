@@ -1,3 +1,12 @@
+CREATE TABLE public.users (
+	id serial4 NOT NULL,
+	fullname varchar(100) NOT NULL,
+	username varchar(50) NOT NULL,
+	"password" varchar(255) NOT NULL,
+	email varchar(50) NOT NULL,
+	CONSTRAINT users_pkey PRIMARY KEY (id)
+);
+
 CREATE TABLE public.programa_ies (
 	id uuid DEFAULT uuid_generate_v4() NOT NULL,
 	ano_base varchar NOT NULL,
@@ -217,14 +226,13 @@ GROUP BY researcher.id, programa_ies.id;
 
 CREATE INDEX idx_fts_search ON search_index USING gin(document);
 
-SELECT name,abstract
-FROM search_index
+SELECT name,nome_programa,abstract
+FROM search_index 
 WHERE document @@ websearch_to_tsquery('simple', 'Ciência de dados')
-ORDER BY ts_rank(document, websearch_to_tsquery('simple', 'Ciência dados')) DESC;
+ORDER BY ts_rank(document, websearch_to_tsquery('simple', 'Ciência de dados')) DESC;
 
 --Consulta das informações--
-select id uuid,
-name varchar,
+select name varchar,
 nome_programa varchar,
 abstract varchar,
 ts_rank(document, websearch_to_tsquery('simple','Ciência de dados'))
@@ -264,7 +272,7 @@ LANGUAGE plpgsql;
 select * from search_search_index('Faculdade de Educação');
 
 SELECT * FROM search_index
-WHERE document @@ to_tsquery('simple', 'Faculdade & Educação')
+WHERE document @@ to_tsquery('simple', 'Faculdade & !Educação')
 
 select name, abstract, ts_rank_cd(
     document,
@@ -301,3 +309,13 @@ WHERE similarity(word, :q) >= 0.5
 ORDER BY word <-> :q;
 
 select * from search_search_index('Informação');
+
+select * from search_index 
+where document @@ websearch_to_tsquery('simple','Sistemas de Informação') 
+
+SELECT * FROM search_index
+WHERE document @@ to_tsquery('simple', 'Sistemas & !Informação')
+
+SELECT *
+FROM search_index
+WHERE document @@ to_tsquery('simple', websearch_to_tsquery('simple', 'Sistemas de Informação')::text || ':*');
